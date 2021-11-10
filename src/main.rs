@@ -8,14 +8,6 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Error as Tok
 // let time = (42 >> 1) | (16 << 5) | (12 << 11);
 const TIME: u16 = 0x5a5d;
 const DATE: u16 = 0x5368;
-const EXTRA: &[u8] = &[
-    // 0x55, 0x54, 0x09, 0x00, 0x03, 0x91, 0xf9, 0x88, 0x61, 0xe3, 0xf9, 0x88, 0x61, 0x75, 0x78,
-    // 0x0b, 0x00, 0x01, 0x04, 0xe9, 0x03, 0x00, 0x00, 0x04, 0xe9, 0x03, 0x00, 0x00,
-];
-const EXTRA_2: &[u8] = &[
-    // 0x55, 0x54, 0x05, 0x00, 0x03, 0x91, 0xf9, 0x88, 0x61, 0x75, 0x78, 0x0b, 0x00, 0x01, 0x04,
-    // 0xe9, 0x03, 0x00, 0x00, 0x04, 0xe9, 0x03, 0x00, 0x00,
-];
 
 #[tokio::main]
 async fn main() {
@@ -50,7 +42,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
 
     pub async fn append<R: AsyncRead + Unpin>(&mut self, name: String, reader: &mut R) -> Result<(), TokioIoError> {
         let offset = self.written;
-        let mut header = Vec::with_capacity(7 * size_of::<u16>() + 4 * size_of::<u32>() + name.len() + EXTRA.len());
+        let mut header = Vec::with_capacity(7 * size_of::<u16>() + 4 * size_of::<u32>() + name.len());
 
         header.extend_from_slice(&0x04034b50u32.to_le_bytes()); // Local file header signature.
         header.extend_from_slice(&10u16.to_le_bytes()); // Version needed to extract.
@@ -62,9 +54,9 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         header.extend_from_slice(&0u32.to_le_bytes()); // Temporary compressed size.
         header.extend_from_slice(&0u32.to_le_bytes()); // Temporary uncompressed size.
         header.extend_from_slice(&(name.len() as u16).to_le_bytes()); // Filename length.
-        header.extend_from_slice(&(EXTRA.len() as u16).to_le_bytes()); // Extra field length.
+        header.extend_from_slice(&0u16.to_le_bytes()); // Extra field length.
         header.extend_from_slice(name.as_bytes()); // Filename.
-        header.extend_from_slice(EXTRA); // Extra field.
+        // header.extend_from_slice(EXTRA); // Extra field.
         self.sink.write_all(&header).await?;
         self.written += header.len();
 
@@ -107,8 +99,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         for file_info in &self.files_info {
             let entry_size = 11 * size_of::<u16>() +
                 6 * size_of::<u32>() +
-                file_info.name.len() +
-                EXTRA_2.len();
+                file_info.name.len();
             central_directory_size += entry_size;
 
             let mut entry = Vec::with_capacity(entry_size);
@@ -123,14 +114,14 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
             entry.extend_from_slice(&(file_info.size as u32).to_le_bytes()); // Compressed size.
             entry.extend_from_slice(&(file_info.size as u32).to_le_bytes()); // Uncompressed size.
             entry.extend_from_slice(&(file_info.name.len() as u16).to_le_bytes()); // Filename length.
-            entry.extend_from_slice(&(EXTRA_2.len() as u16).to_le_bytes()); // Extra field length.
+            entry.extend_from_slice(&0u16.to_le_bytes()); // Extra field length.
             entry.extend_from_slice(&0u16.to_le_bytes()); // File comment length.
             entry.extend_from_slice(&0u16.to_le_bytes()); // File's Disk number.
             entry.extend_from_slice(&0u16.to_le_bytes()); // Internal file attributes.
             entry.extend_from_slice(&((0o100000u32 | 0o0000400 | 0o0000200 | 0o0000040 | 0o0000004) << 16).to_le_bytes()); // External file attributes (regular file rw-r-r-).
             entry.extend_from_slice(&(file_info.offset as u32).to_le_bytes()); // Offset from start of file to local file header.
             entry.extend_from_slice(file_info.name.as_bytes()); // Filename.
-            entry.extend_from_slice(EXTRA_2); // Extra field.
+            // entry.extend_from_slice(EXTRA_2); // Extra field.
             self.sink.write_all(&entry).await?;
         }
 
