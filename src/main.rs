@@ -104,7 +104,6 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         header.extend_from_slice(&(name.len() as u16).to_le_bytes()); // Filename length.
         header.extend_from_slice(&0u16.to_le_bytes()); // Extra field length.
         header.extend_from_slice(name.as_bytes()); // Filename.
-        // header.extend_from_slice(EXTRA); // Extra field.
         self.sink.write_all(&header).await?;
         self.written += header.len();
 
@@ -170,7 +169,6 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
             entry.extend_from_slice(&((0o100000u32 | 0o0000400 | 0o0000200 | 0o0000040 | 0o0000004) << 16).to_le_bytes()); // External file attributes (regular file rw-r-r-).
             entry.extend_from_slice(&(file_info.offset as u32).to_le_bytes()); // Offset from start of file to local file header.
             entry.extend_from_slice(file_info.name.as_bytes()); // Filename.
-            // entry.extend_from_slice(EXTRA_2); // Extra field.
             self.sink.write_all(&entry).await?;
         }
 
