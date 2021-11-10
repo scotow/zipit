@@ -102,7 +102,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         Ok(())
     }
 
-    pub async fn finalize(mut self) -> Result<(), TokioIoError> {
+    pub async fn finalize(mut self) -> Result<W, TokioIoError> {
         let mut central_directory_size = 0;
         for file_info in &self.files_info {
             let entry_size = 11 * size_of::<u16>() +
@@ -127,7 +127,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
             entry.extend_from_slice(&0u16.to_le_bytes()); // File comment length.
             entry.extend_from_slice(&0u16.to_le_bytes()); // File's Disk number.
             entry.extend_from_slice(&0u16.to_le_bytes()); // Internal file attributes.
-            entry.extend_from_slice(&(0b1000000110100100u32 << 16).to_le_bytes()); // External file attributes (https://unix.stackexchange.com/questions/14705/the-zip-formats-external-file-attribute).
+            entry.extend_from_slice(&((0o100000u32 | 0o0000400 | 0o0000200 | 0o0000040 | 0o0000004) << 16).to_le_bytes()); // External file attributes (regular file rw-r-r-).
             entry.extend_from_slice(&(file_info.offset as u32).to_le_bytes()); // Offset from start of file to local file header.
             entry.extend_from_slice(file_info.name.as_bytes()); // Filename.
             entry.extend_from_slice(EXTRA_2); // Extra field.
@@ -148,6 +148,6 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         end_of_central_directory.extend_from_slice(&0u16.to_le_bytes()); // Comment length.
         self.sink.write_all(&end_of_central_directory).await?;
 
-        Ok(())
+        Ok(self.sink)
     }
 }
