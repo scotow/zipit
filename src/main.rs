@@ -1,20 +1,26 @@
 use std::io::Cursor;
 use std::mem::size_of;
 
+#[cfg(feature = "chrono-datetime")]
+use chrono::{Datelike, DateTime, Local, Timelike, TimeZone};
 use crc32fast::Hasher;
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Error as TokioIoError};
-
-// let time = (42 >> 1) | (16 << 5) | (12 << 11);
-const TIME: u16 = 0x5a5d;
-const DATE: u16 = 0x5368;
 
 #[tokio::main]
 async fn main() {
     let file = File::create("archive.zip").await.unwrap();
     let mut archive = Archive::new(file);
-    archive.append("file1.txt".to_owned(), &mut Cursor::new(b"hello\n".to_vec())).await.unwrap();
-    archive.append("file2.txt".to_owned(), &mut Cursor::new(b"world\n".to_vec())).await.unwrap();
+    archive.append(
+        "file1.txt".to_owned(),
+        FileDateTime::now(),
+        &mut Cursor::new(b"hello\n".to_vec()),
+    ).await.unwrap();
+    archive.append(
+        "file2.txt".to_owned(),
+        FileDateTime::now(),
+        &mut Cursor::new(b"world\n".to_vec()),
+    ).await.unwrap();
     archive.finalize().await.unwrap();
 }
 
@@ -23,9 +29,50 @@ struct FileInfo {
     size: usize,
     crc: u32,
     offset: usize,
+    datetime: (u16, u16),
 }
 
-struct Archive<W> {
+pub enum FileDateTime {
+    Zero,
+    Custom(u16, u16, u16, u16, u16, u16),
+}
+
+impl FileDateTime {
+    fn tuple(&self) -> (u16, u16, u16, u16, u16, u16) {
+        match self {
+            FileDateTime::Zero => Default::default(),
+            &FileDateTime::Custom(ye, mo, da, ho, mi, se) => (ye, mo, da, ho, mi, se),
+        }
+    }
+
+    fn ms_dos(&self) -> (u16, u16) {
+        let (year, month, day, hour, min, sec) = self.tuple();
+        (
+            day | month << 5 | year.saturating_sub(1980) << 9,
+            sec / 2 | min << 5 | hour << 11,
+        )
+    }
+}
+
+#[cfg(feature = "chrono-datetime")]
+impl FileDateTime {
+    pub fn now() -> Self {
+        Self::from_chrono_datetime(Local::now())
+    }
+
+    pub fn from_chrono_datetime<Tz: TimeZone>(datetime: DateTime<Tz>) -> Self {
+        Self::Custom(
+            datetime.year() as u16,
+            datetime.month() as u16,
+            datetime.day() as u16,
+            datetime.hour() as u16,
+            datetime.minute() as u16,
+            datetime.second() as u16,
+        )
+    }
+}
+
+pub struct Archive<W> {
     sink: W,
     files_info: Vec<FileInfo>,
     written: usize,
@@ -40,7 +87,8 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         }
     }
 
-    pub async fn append<R: AsyncRead + Unpin>(&mut self, name: String, reader: &mut R) -> Result<(), TokioIoError> {
+    pub async fn append<R: AsyncRead + Unpin>(&mut self, name: String, datetime: FileDateTime, reader: &mut R) -> Result<(), TokioIoError> {
+        let (date, time) = datetime.ms_dos();
         let offset = self.written;
         let mut header = Vec::with_capacity(7 * size_of::<u16>() + 4 * size_of::<u32>() + name.len());
 
@@ -48,8 +96,8 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         header.extend_from_slice(&10u16.to_le_bytes()); // Version needed to extract.
         header.extend_from_slice(&0x08u16.to_le_bytes()); // General purpose flag.
         header.extend_from_slice(&0u16.to_le_bytes()); // Compression method (store).
-        header.extend_from_slice(&TIME.to_le_bytes()); // Modification time.
-        header.extend_from_slice(&DATE.to_le_bytes()); // Modification date.
+        header.extend_from_slice(&time.to_le_bytes()); // Modification time.
+        header.extend_from_slice(&date.to_le_bytes()); // Modification date.
         header.extend_from_slice(&0u32.to_le_bytes()); // Temporary CRC32.
         header.extend_from_slice(&0u32.to_le_bytes()); // Temporary compressed size.
         header.extend_from_slice(&0u32.to_le_bytes()); // Temporary uncompressed size.
@@ -89,6 +137,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
             size: total_read,
             crc,
             offset,
+            datetime: (date, time),
         });
 
         Ok(())
@@ -108,8 +157,8 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
             entry.extend_from_slice(&10u16.to_le_bytes()); // Version needed to extract.
             entry.extend_from_slice(&0x08u16.to_le_bytes()); // General purpose flag.
             entry.extend_from_slice(&0u16.to_le_bytes()); // Compression method (store).
-            entry.extend_from_slice(&TIME.to_le_bytes()); // Modification time.
-            entry.extend_from_slice(&DATE.to_le_bytes()); // Modification date.
+            entry.extend_from_slice(&file_info.datetime.1.to_le_bytes()); // Modification time.
+            entry.extend_from_slice(&file_info.datetime.0.to_le_bytes()); // Modification date.
             entry.extend_from_slice(&file_info.crc.to_le_bytes()); // CRC32.
             entry.extend_from_slice(&(file_info.size as u32).to_le_bytes()); // Compressed size.
             entry.extend_from_slice(&(file_info.size as u32).to_le_bytes()); // Uncompressed size.
