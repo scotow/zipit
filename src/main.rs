@@ -72,6 +72,18 @@ impl FileDateTime {
     }
 }
 
+macro_rules! header {
+    [$capacity:expr; $($elem:expr),*$(,)?] => {
+        {
+            let mut header = Vec::with_capacity($capacity);
+            $(
+                header.extend_from_slice(&$elem.to_le_bytes());
+            )*
+            header
+        }
+    };
+}
+
 pub struct Archive<W> {
     sink: W,
     files_info: Vec<FileInfo>,
@@ -90,6 +102,10 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
     pub async fn append<R: AsyncRead + Unpin>(&mut self, name: String, datetime: FileDateTime, reader: &mut R) -> Result<(), TokioIoError> {
         let (date, time) = datetime.ms_dos();
         let offset = self.written;
+        // let mut header = header![
+        //     7 * size_of::<u16>() + 4 * size_of::<u32>() + name.len();
+        //     0x04034b50u32,
+        // ];
         let mut header = Vec::with_capacity(7 * size_of::<u16>() + 4 * size_of::<u32>() + name.len());
 
         header.extend_from_slice(&0x04034b50u32.to_le_bytes()); // Local file header signature.
