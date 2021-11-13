@@ -177,7 +177,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
                 0u16,                           // File comment length.
                 0u16,                           // File's Disk number.
                 0u16,                           // Internal file attributes.
-                (0o100000u32 | 0o0000400 | 0o0000200 | 0o0000040 | 0o0000004) << 16, // External file attributes (regular file rw-r-r-).
+                (0o100000u32 | 0o0000400 | 0o0000200 | 0o0000040 | 0o0000004) << 16, // External file attributes (regular file / rw-r--r--).
                 file_info.offset as u32,        // Offset from start of file to local file header.
             ];
             entry.extend_from_slice(file_info.name.as_bytes()); // Filename.
