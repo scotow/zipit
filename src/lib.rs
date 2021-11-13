@@ -1,28 +1,10 @@
-use std::io::Cursor;
 use std::mem::size_of;
+use std::io::Error as IoError;
 
 #[cfg(feature = "chrono-datetime")]
 use chrono::{Datelike, DateTime, Local, Timelike, TimeZone};
 use crc32fast::Hasher;
-use tokio::fs::File;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Error as TokioIoError};
-
-#[tokio::main]
-async fn main() {
-    let file = File::create("archive.zip").await.unwrap();
-    let mut archive = Archive::new(file);
-    archive.append(
-        "file1.txt".to_owned(),
-        FileDateTime::now(),
-        &mut Cursor::new(b"hello\n".to_vec()),
-    ).await.unwrap();
-    archive.append(
-        "file2.txt".to_owned(),
-        FileDateTime::now(),
-        &mut Cursor::new(b"world\n".to_vec()),
-    ).await.unwrap();
-    archive.finalize().await.unwrap();
-}
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 struct FileInfo {
     name: String,
@@ -84,6 +66,11 @@ macro_rules! header {
     };
 }
 
+const FILE_HEADER_BASE_SIZE: usize = 7 * size_of::<u16>() + 4 * size_of::<u32>();
+const DESCRIPTOR_SIZE: usize = 4 * size_of::<u32>();
+const CENTRAL_DIRECTORY_ENTRY_BASE_SIZE: usize = 11 * size_of::<u16>() + 6 * size_of::<u32>();
+const END_OF_CENTRAL_DIRECTORY_SIZE: usize = 5 * size_of::<u16>() + 3 * size_of::<u32>();
+
 pub struct Archive<W> {
     sink: W,
     files_info: Vec<FileInfo>,
@@ -99,11 +86,11 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         }
     }
 
-    pub async fn append<R: AsyncRead + Unpin>(&mut self, name: String, datetime: FileDateTime, reader: &mut R) -> Result<(), TokioIoError> {
+    pub async fn append<R: AsyncRead + Unpin>(&mut self, name: String, datetime: FileDateTime, reader: &mut R) -> Result<(), IoError> {
         let (date, time) = datetime.ms_dos();
         let offset = self.written;
         let mut header = header![
-            7 * size_of::<u16>() + 4 * size_of::<u32>() + name.len();
+            FILE_HEADER_BASE_SIZE + name.len();
             0x04034b50u32,          // Local file header signature.
             10u16,                  // Version needed to extract.
             0x08u16,                // General purpose flag.
@@ -137,7 +124,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         self.written += total_read;
 
         let descriptor = header![
-            4 * size_of::<u32>();
+            DESCRIPTOR_SIZE;
             0x08074b50u32,      // Data descriptor signature.
             crc,                // CRC32.
             total_read as u32,  // Compressed size.
@@ -157,11 +144,11 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         Ok(())
     }
 
-    pub async fn finalize(mut self) -> Result<W, TokioIoError> {
+    pub async fn finalize(mut self) -> Result<W, IoError> {
         let mut central_directory_size = 0;
         for file_info in &self.files_info {
             let mut entry = header![
-                11 * size_of::<u16>() + 6 * size_of::<u32>() + file_info.name.len();
+                CENTRAL_DIRECTORY_ENTRY_BASE_SIZE + file_info.name.len();
                 0x02014b50u32,                  // Central directory entry signature.
                 0x031eu16,                      // Version made by.
                 10u16,                          // Version needed to extract.
@@ -186,7 +173,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         }
 
         let end_of_central_directory =header![
-            5 * size_of::<u16>() + 3 * size_of::<u32>();
+            END_OF_CENTRAL_DIRECTORY_SIZE;
             0x06054b50u32,                  // End of central directory signature.
             0u16,                           // Number of this disk.
             0u16,                           // Number of the disk where central directory starts.
@@ -202,10 +189,40 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
     }
 }
 
+pub fn archive_size(files: &[(&str, usize)]) -> usize {
+    files.into_iter()
+        .map(|(name, size)| {
+            FILE_HEADER_BASE_SIZE + name.len() +
+                size +
+                DESCRIPTOR_SIZE +
+                CENTRAL_DIRECTORY_ENTRY_BASE_SIZE + name.len()
+        })
+        .sum::<usize>() + END_OF_CENTRAL_DIRECTORY_SIZE
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
     use crate::{Archive, FileDateTime};
+
+    #[test]
+    fn archive_size() {
+        assert_eq!(
+            crate::archive_size(&[
+                ("file1.txt", b"hello\n".len()),
+                ("file2.txt", b"world\n".len()),
+            ]),
+            254
+        );
+        assert_eq!(
+            crate::archive_size(&[
+                ("file1.txt", b"hello\n".len()),
+                ("file2.txt", b"world\n".len()),
+                ("file3.txt", b"how are you?\n".len()),
+            ]),
+            377
+        );
+    }
 
     #[tokio::test]
     async fn archive_structure() {
