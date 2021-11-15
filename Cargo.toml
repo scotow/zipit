@@ -2,6 +2,15 @@
 name = "zipit"
 version = "0.1.0"
 edition = "2021"
+authors = ["Scotow <contact@scotow.com>"]
+license = "MIT"
+readme = "README.md"
+documentation = "https://docs.rs/zipit"
+repository = "https://github.com/scotow/zipit"
+homepage = "https://github.com/scotow/zipit"
+description = "Create and stream a Zip archive into an AsyncWrite"
+categories = ["zip", "archive", "asynchronous"]
+keywords = ["io", "async", "non-blocking", "futures", "zip", "archive"]
 
 [dependencies]
 tokio = { version = "1.13", default-features = false, features = ["io-util"] }
