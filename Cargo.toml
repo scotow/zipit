@@ -9,7 +9,7 @@ crc32fast = "1.2"
 chrono = { version = "0.4", optional = true }
 
 [dev-dependencies]
-tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.13", features = ["macros", "rt-multi-thread", "fs"] }
 tokio-util = { version = "0.6", default-features = false, features = ["io"] }
 hyper = { version = "0.14", default-features = false, features = ["tcp", "http1", "server", "stream"] }
 
