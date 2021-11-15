@@ -87,11 +87,11 @@
 //! }
 //! ```
 
-use std::mem::size_of;
 use std::io::Error as IoError;
+use std::mem::size_of;
 
 #[cfg(feature = "chrono-datetime")]
-use chrono::{Datelike, DateTime, Local, Timelike, TimeZone};
+use chrono::{DateTime, Datelike, Local, TimeZone, Timelike};
 use crc32fast::Hasher;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -214,7 +214,12 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
     /// Append a new file to the archive using the provided name, date/time and AsyncRead object.
     ///
     /// This function will forward any error found while trying to read from the file stream or while writing to the underlying sink.
-    pub async fn append<R: AsyncRead + Unpin>(&mut self, name: String, datetime: FileDateTime, reader: &mut R) -> Result<(), IoError> {
+    pub async fn append<R: AsyncRead + Unpin>(
+        &mut self,
+        name: String,
+        datetime: FileDateTime,
+        reader: &mut R,
+    ) -> Result<(), IoError> {
         let (date, time) = datetime.ms_dos();
         let offset = self.written;
         let mut header = header![
@@ -301,7 +306,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
             central_directory_size += entry.len();
         }
 
-        let end_of_central_directory =header![
+        let end_of_central_directory = header![
             END_OF_CENTRAL_DIRECTORY_SIZE;
             0x06054b50u32,                  // End of central directory signature.
             0u16,                           // Number of this disk.
@@ -329,21 +334,25 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
 ///     254,
 /// );
 /// ```
-pub fn archive_size<'a, I: IntoIterator<Item=(&'a str, usize)>>(files: I) -> usize {
-    files.into_iter()
+pub fn archive_size<'a, I: IntoIterator<Item = (&'a str, usize)>>(files: I) -> usize {
+    files
+        .into_iter()
         .map(|(name, size)| {
-            FILE_HEADER_BASE_SIZE + name.len() +
-                size +
-                DESCRIPTOR_SIZE +
-                CENTRAL_DIRECTORY_ENTRY_BASE_SIZE + name.len()
+            FILE_HEADER_BASE_SIZE
+                + name.len()
+                + size
+                + DESCRIPTOR_SIZE
+                + CENTRAL_DIRECTORY_ENTRY_BASE_SIZE
+                + name.len()
         })
-        .sum::<usize>() + END_OF_CENTRAL_DIRECTORY_SIZE
+        .sum::<usize>()
+        + END_OF_CENTRAL_DIRECTORY_SIZE
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
     use crate::{Archive, FileDateTime};
+    use std::io::Cursor;
 
     #[test]
     fn archive_size() {
@@ -367,33 +376,56 @@ mod tests {
     #[tokio::test]
     async fn archive_structure() {
         let mut archive = Archive::new(Vec::new());
-        archive.append(
-            "file1.txt".to_owned(),
-            FileDateTime::now(),
-            &mut Cursor::new(b"hello\n".to_vec()),
-        ).await.unwrap();
-        archive.append(
-            "file2.txt".to_owned(),
-            FileDateTime::now(),
-            &mut Cursor::new(b"world\n".to_vec()),
-        ).await.unwrap();
+        archive
+            .append(
+                "file1.txt".to_owned(),
+                FileDateTime::now(),
+                &mut Cursor::new(b"hello\n".to_vec()),
+            )
+            .await
+            .unwrap();
+        archive
+            .append(
+                "file2.txt".to_owned(),
+                FileDateTime::now(),
+                &mut Cursor::new(b"world\n".to_vec()),
+            )
+            .await
+            .unwrap();
         let data = archive.finalize().await.unwrap();
 
         fn match_except_datetime(a1: &[u8], a2: &[u8]) -> bool {
-            let datetime_ranges = [10..12, 12..14, 71..73, 73..75, 134..136, 136..138, 189..191, 191..193];
+            let datetime_ranges = [
+                10..12,
+                12..14,
+                71..73,
+                73..75,
+                134..136,
+                136..138,
+                189..191,
+                191..193,
+            ];
             let size_ranges = [18..22, 22..26, 79..83, 83..87];
-            a1.len() == a2.len() &&
-                a1.into_iter()
+            a1.len() == a2.len()
+                && a1
+                    .into_iter()
                     .zip(a2)
                     .enumerate()
                     .filter(|(i, _)| {
-                        datetime_ranges.iter()
+                        datetime_ranges
+                            .iter()
                             .chain(&size_ranges)
                             .all(|range| !range.contains(i))
                     })
                     .all(|(_, (b1, b2))| b1 == b2)
         }
-        assert!(match_except_datetime(&data, include_bytes!("timeless_test_archive.zip")));
-        assert!(match_except_datetime(&data, include_bytes!("zip_command_test_archive.zip")));
+        assert!(match_except_datetime(
+            &data,
+            include_bytes!("timeless_test_archive.zip")
+        ));
+        assert!(match_except_datetime(
+            &data,
+            include_bytes!("zip_command_test_archive.zip")
+        ));
     }
 }

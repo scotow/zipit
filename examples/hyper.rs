@@ -17,19 +17,11 @@ async fn zip_archive(_req: Request<Body>) -> Result<Response<Body>, hyper::http:
     tokio::spawn(async move {
         let mut archive = Archive::new(w);
         archive
-            .append(
-                filename_1,
-                FileDateTime::now(),
-                &mut fd_1,
-            )
+            .append(filename_1, FileDateTime::now(), &mut fd_1)
             .await
             .unwrap();
         archive
-            .append(
-                filename_2,
-                FileDateTime::now(),
-                &mut fd_2,
-            )
+            .append(filename_2, FileDateTime::now(), &mut fd_2)
             .await
             .unwrap();
         archive.finalize().await.unwrap();
@@ -45,7 +37,8 @@ async fn zip_archive(_req: Request<Body>) -> Result<Response<Body>, hyper::http:
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = ([127, 0, 0, 1], 8080).into();
-    let service = make_service_fn(|_| async { Ok::<_, hyper::http::Error>(service_fn(zip_archive)) });
+    let service =
+        make_service_fn(|_| async { Ok::<_, hyper::http::Error>(service_fn(zip_archive)) });
     let server = Server::bind(&addr).serve(service);
 
     println!("Listening on http://{}", addr);
