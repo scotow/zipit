@@ -1,3 +1,92 @@
+//! ## Features
+//!
+//! - Stream on the fly an archive from multiple AsyncRead objects.
+//! - Single read / seek free implementation (the CRC and file size are calculated while streaming and are sent afterwards).
+//! - Archive size pre-calculation (useful if you want to set the `Content-Length` before streaming).
+//!
+//! ## Limitations
+//!
+//! - Depends on [`tokio`](https://docs.rs/tokio/1.13.0/tokio/io/)'s [`AsyncRead`](https://docs.rs/tokio/1.13.0/tokio/io/trait.AsyncRead.html) and [`AsyncWrite`](https://docs.rs/tokio/1.13.0/tokio/io/trait.AsyncWrite.html) traits.
+//! - No compression (stored method only)
+//!
+//! ## Examples
+//!
+//! ### [File system](examples/fs.rs)
+//!
+//! Write a Zip archive to the file system using [`tokio::fs::File`](https://docs.rs/tokio/1.13.0/tokio/fs/struct.File.html):
+//!
+//! ```rust
+//! use std::io::Cursor;
+//! use tokio::fs::File;
+//! use zipit::{Archive, FileDateTime};
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let file = File::create("archive.zip").await.unwrap();
+//!     let mut archive = Archive::new(file);
+//!     archive.append(
+//!         "file1.txt".to_owned(),
+//!         FileDateTime::now(),
+//!         &mut Cursor::new(b"hello\n".to_vec()),
+//!     ).await.unwrap();
+//!     archive.append(
+//!         "file2.txt".to_owned(),
+//!         FileDateTime::now(),
+//!         &mut Cursor::new(b"world\n".to_vec()),
+//!     ).await.unwrap();
+//!     archive.finalize().await.unwrap();
+//! }
+//! ```
+//!
+//! ### [Hyper](examples/hyper.rs)
+//!
+//! Stream a Zip archive as a [`hyper`](https://docs.rs/hyper/0.14.14/hyper/) reponse:
+//!
+//! ```rust
+//! use std::io::Cursor;
+//! use hyper::{header, Body, Request, Response, Server, StatusCode};
+//! use tokio::io::duplex;
+//! use tokio_util::io::ReaderStream;
+//! use zipit::{archive_size, Archive, FileDateTime};
+//!
+//! async fn zip_archive(_req: Request<Body>) -> Result<Response<Body>, hyper::http::Error> {
+//!     let (filename_1, mut fd_1) = (String::from("file1.txt"), Cursor::new(b"hello\n".to_vec()));
+//!     let (filename_2, mut fd_2) = (String::from("file2.txt"), Cursor::new(b"world\n".to_vec()));
+//!     let archive_size = archive_size([
+//!         (filename_1.as_ref(), fd_1.get_ref().len()),
+//!         (filename_2.as_ref(), fd_2.get_ref().len()),
+//!     ]);
+//!
+//!     let (w, r) = duplex(4096);
+//!     tokio::spawn(async move {
+//!         let mut archive = Archive::new(w);
+//!         archive
+//!             .append(
+//!                 filename_1,
+//!                 FileDateTime::now(),
+//!                 &mut fd_1,
+//!             )
+//!             .await
+//!             .unwrap();
+//!         archive
+//!             .append(
+//!                 filename_2,
+//!                 FileDateTime::now(),
+//!                 &mut fd_2,
+//!             )
+//!             .await
+//!             .unwrap();
+//!         archive.finalize().await.unwrap();
+//!     });
+//!
+//!     Response::builder()
+//!         .status(StatusCode::OK)
+//!         .header(header::CONTENT_LENGTH, archive_size)
+//!         .header(header::CONTENT_TYPE, "application/zip")
+//!         .body(Body::wrap_stream(ReaderStream::new(r)))
+//! }
+//! ```
+
 use std::mem::size_of;
 use std::io::Error as IoError;
 
@@ -14,8 +103,17 @@ struct FileInfo {
     datetime: (u16, u16),
 }
 
+/// The (timezone-less) date and time that will be written in the archive alongside the file.
+///
+/// Use `FileDateTime::Zero` if the date and time are insignificant. This will set the value to 0 which is 1980, January 1th, 12AM.
+///
+/// Use `FileDateTime::Custom` if you need to set a custom date and time.
+///
+/// Use `FileDateTime::now()` if you want to use the current date and time (`chrono-datetime` feature required).
 pub enum FileDateTime {
+    /// 1980, January 1th, 12AM.
     Zero,
+    /// (year, month, day, hour, minute, second)
     Custom(u16, u16, u16, u16, u16, u16),
 }
 
@@ -38,10 +136,12 @@ impl FileDateTime {
 
 #[cfg(feature = "chrono-datetime")]
 impl FileDateTime {
+    /// Use the local date and time of the system.
     pub fn now() -> Self {
         Self::from_chrono_datetime(Local::now())
     }
 
+    /// Use a custom date and time.
     pub fn from_chrono_datetime<Tz: TimeZone>(datetime: DateTime<Tz>) -> Self {
         Self::Custom(
             datetime.year() as u16,
@@ -71,6 +171,30 @@ const DESCRIPTOR_SIZE: usize = 4 * size_of::<u32>();
 const CENTRAL_DIRECTORY_ENTRY_BASE_SIZE: usize = 11 * size_of::<u16>() + 6 * size_of::<u32>();
 const END_OF_CENTRAL_DIRECTORY_SIZE: usize = 5 * size_of::<u16>() + 3 * size_of::<u32>();
 
+/// A Zip archive 'stream proxy'.
+///
+/// Create an archive using the `new` function and a `AsyncWrite`. Then, append file one by one using the `append` function. When finished, use the `finalize` function.
+/// ```no_run
+/// use std::io::Cursor;
+/// use zipit::{Archive, FileDateTime};
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let mut archive = Archive::new(Vec::new());
+///     archive.append(
+///         "file1.txt".to_owned(),
+///         FileDateTime::now(),
+///         &mut Cursor::new(b"hello\n".to_vec()),
+///     ).await.unwrap();
+///     archive.append(
+///         "file2.txt".to_owned(),
+///         FileDateTime::now(),
+///         &mut Cursor::new(b"world\n".to_vec()),
+///     ).await.unwrap();
+///     let data = archive.finalize().await.unwrap();
+///     println!("{}", data);
+/// }
+/// ```
 pub struct Archive<W> {
     sink: W,
     files_info: Vec<FileInfo>,
@@ -78,6 +202,7 @@ pub struct Archive<W> {
 }
 
 impl<W: AsyncWrite + Unpin> Archive<W> {
+    /// Create a new Zip archive, using the underlying `AsyncWrite` to write files' header and payload.
     pub fn new(sink: W) -> Self {
         Self {
             sink,
@@ -86,6 +211,9 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         }
     }
 
+    /// Append a new file to the archive using the provided name, date/time and AsyncRead object.
+    ///
+    /// This function will forward any error found while trying to read from the file stream or while writing to the underlying sink.
     pub async fn append<R: AsyncRead + Unpin>(&mut self, name: String, datetime: FileDateTime, reader: &mut R) -> Result<(), IoError> {
         let (date, time) = datetime.ms_dos();
         let offset = self.written;
@@ -144,6 +272,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         Ok(())
     }
 
+    /// Finalize the archive by writing the necessary metadata to the end of the archive.
     pub async fn finalize(mut self) -> Result<W, IoError> {
         let mut central_directory_size = 0;
         for file_info in &self.files_info {
@@ -189,6 +318,17 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
     }
 }
 
+/// Calculate the size that an archive could be based on the names and sizes of files.
+///
+/// ```no_run
+/// assert_eq!(
+///     crate::archive_size([
+///         ("file1.txt", b"hello\n".len()),
+///         ("file2.txt", b"world\n".len()),
+///     ]),
+///     254,
+/// );
+/// ```
 pub fn archive_size<'a, I: IntoIterator<Item=(&'a str, usize)>>(files: I) -> usize {
     files.into_iter()
         .map(|(name, size)| {
