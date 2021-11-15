@@ -10,7 +10,7 @@ repository = "https://github.com/scotow/zipit"
 homepage = "https://github.com/scotow/zipit"
 description = "Create and stream a Zip archive into an AsyncWrite"
 categories = ["zip", "archive", "asynchronous"]
-keywords = ["io", "async", "non-blocking", "futures", "zip", "archive"]
+keywords = ["io", "async", "non-blocking", "zip", "archive"]
 
 [dependencies]
 tokio = { version = "1.13", default-features = false, features = ["io-util"] }
