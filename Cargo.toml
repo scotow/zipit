@@ -26,6 +26,13 @@ hyper = { version = "0.14", default-features = false, features = ["tcp", "http1"
 chrono-datetime = ["chrono"]
 
 [[example]]
+name = "fs"
+path = "examples/fs.rs"
+
+[[example]]
 name = "hyper"
 path = "examples/hyper.rs"
 required-features = ["chrono-datetime"]
+
+[package.metadata.docs.rs]
+all-features = true
