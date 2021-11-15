@@ -8,7 +8,7 @@ use zipit::{archive_size, Archive, FileDateTime};
 async fn zip_archive(_req: Request<Body>) -> Result<Response<Body>, hyper::http::Error> {
     let (filename_1, mut fd_1) = (String::from("file1.txt"), Cursor::new(b"hello\n".to_vec()));
     let (filename_2, mut fd_2) = (String::from("file2.txt"), Cursor::new(b"world\n".to_vec()));
-    let archive_size = archive_size(&[
+    let archive_size = archive_size([
         (filename_1.as_ref(), fd_1.get_ref().len()),
         (filename_2.as_ref(), fd_2.get_ref().len()),
     ]);

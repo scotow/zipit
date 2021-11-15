@@ -189,7 +189,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
     }
 }
 
-pub fn archive_size<'a, I: IntoIterator<Item=&'a(&'a str, usize)>>(files: I) -> usize {
+pub fn archive_size<'a, I: IntoIterator<Item=(&'a str, usize)>>(files: I) -> usize {
     files.into_iter()
         .map(|(name, size)| {
             FILE_HEADER_BASE_SIZE + name.len() +
@@ -208,14 +208,14 @@ mod tests {
     #[test]
     fn archive_size() {
         assert_eq!(
-            crate::archive_size(&[
+            crate::archive_size([
                 ("file1.txt", b"hello\n".len()),
                 ("file2.txt", b"world\n".len()),
             ]),
             254,
         );
         assert_eq!(
-            crate::archive_size(&[
+            crate::archive_size([
                 ("file1.txt", b"hello\n".len()),
                 ("file2.txt", b"world\n".len()),
                 ("file3.txt", b"how are you?\n".len()),
