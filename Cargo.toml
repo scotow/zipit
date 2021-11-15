@@ -10,6 +10,13 @@ chrono = { version = "0.4", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
+tokio-util = { version = "0.6", default-features = false, features = ["io"] }
+hyper = { version = "0.14", default-features = false, features = ["tcp", "http1", "server", "stream"] }
 
 [features]
 chrono-datetime = ["chrono"]
+
+[[example]]
+name = "hyper"
+path = "examples/hyper.rs"
+required-features = ["chrono-datetime"]
