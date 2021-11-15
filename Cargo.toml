@@ -9,7 +9,7 @@ documentation = "https://docs.rs/zipit"
 repository = "https://github.com/scotow/zipit"
 homepage = "https://github.com/scotow/zipit"
 description = "Create and stream a Zip archive into an AsyncWrite"
-categories = ["zip", "archive", "asynchronous"]
+categories = ["compression", "asynchronous", "web-programming"]
 keywords = ["io", "async", "non-blocking", "zip", "archive"]
 
 [dependencies]
