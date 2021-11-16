@@ -15,7 +15,7 @@
 //!
 //! ### [File system](examples/fs.rs)
 //!
-//! Write a Zip archive to the file system using [`tokio::fs::File`](https://docs.rs/tokio/1.13.0/tokio/fs/struct.File.html):
+//! Write a zip archive to the file system using [`tokio::fs::File`](https://docs.rs/tokio/1.13.0/tokio/fs/struct.File.html):
 //!
 //! ```rust
 //! use std::io::Cursor;
@@ -42,7 +42,7 @@
 //!
 //! ### [Hyper](examples/hyper.rs)
 //!
-//! Stream a Zip archive as a [`hyper`](https://docs.rs/hyper/0.14.14/hyper/) reponse:
+//! Stream a zip archive as a [`hyper`](https://docs.rs/hyper/0.14.14/hyper/) response:
 //!
 //! ```rust
 //! use std::io::Cursor;
@@ -171,7 +171,7 @@ const DESCRIPTOR_SIZE: usize = 4 * size_of::<u32>();
 const CENTRAL_DIRECTORY_ENTRY_BASE_SIZE: usize = 11 * size_of::<u16>() + 6 * size_of::<u32>();
 const END_OF_CENTRAL_DIRECTORY_SIZE: usize = 5 * size_of::<u16>() + 3 * size_of::<u32>();
 
-/// A Zip archive 'stream proxy'.
+/// A streamed zip archive.
 ///
 /// Create an archive using the `new` function and a `AsyncWrite`. Then, append files one by one using the `append` function. When finished, use the `finalize` function.
 /// 
@@ -205,7 +205,7 @@ pub struct Archive<W> {
 }
 
 impl<W: AsyncWrite + Unpin> Archive<W> {
-    /// Create a new Zip archive, using the underlying `AsyncWrite` to write files' header and payload.
+    /// Create a new zip archive, using the underlying `AsyncWrite` to write files' header and payload.
     pub fn new(sink: W) -> Self {
         Self {
             sink,
@@ -214,7 +214,8 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         }
     }
 
-    /// Append a new file to the archive using the provided name, date/time and AsyncRead object.  
+    /// Append a new file to the archive using the provided name, date/time and `AsyncRead` object.  
+    /// Filename must be valid UTF-8. Some (very) old zip utilities might mess up filenames during extraction if they contain non-ascii characters.  
     /// File's payload is not compressed and is given `rw-r--r--` permissions.
     /// 
     /// # Error

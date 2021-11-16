@@ -3,7 +3,7 @@
 [![crates.io](https://img.shields.io/crates/v/zipit.svg)](https://crates.io/crates/zipit)
 [![Documentation](https://docs.rs/zipit/badge.svg)](https://docs.rs/zipit)
 
-🗄️ Create and stream a Zip archive into an AsyncWrite 🗄️
+🗄️ Create and stream a zip archive into an AsyncWrite 🗄️
 
 ```
 zipit = "0.2"
@@ -26,7 +26,7 @@ zipit = "0.2"
 
 ### [File system](examples/fs.rs)
 
-Write a Zip archive to the file system using [`tokio::fs::File`](https://docs.rs/tokio/1.13.0/tokio/fs/struct.File.html):
+Write a zip archive to the file system using [`tokio::fs::File`](https://docs.rs/tokio/1.13.0/tokio/fs/struct.File.html):
 
 ```rust
 use std::io::Cursor;
@@ -53,7 +53,7 @@ async fn main() {
 
 ### [Hyper](examples/hyper.rs)
 
-Stream a Zip archive as a [`hyper`](https://docs.rs/hyper/0.14.14/hyper/) reponse:
+Stream a zip archive as a [`hyper`](https://docs.rs/hyper/0.14.14/hyper/) response:
 
 ```rust
 use std::io::Cursor;
