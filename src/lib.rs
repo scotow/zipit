@@ -226,7 +226,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
             FILE_HEADER_BASE_SIZE + name.len();
             0x04034b50u32,          // Local file header signature.
             10u16,                  // Version needed to extract.
-            0x08u16,                // General purpose flag.
+            1u16 << 3 | 1 << 11,    // General purpose flag.
             0u16,                   // Compression method (store).
             time,                   // Modification time.
             date,                   // Modification date.
@@ -286,7 +286,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
                 0x02014b50u32,                  // Central directory entry signature.
                 0x031eu16,                      // Version made by.
                 10u16,                          // Version needed to extract.
-                0x08u16,                        // General purpose flag.
+                01u16 << 3 | 1 << 11,           // General purpose flag.
                 0u16,                           // Compression method (store).
                 file_info.datetime.1,           // Modification time.
                 file_info.datetime.0,           // Modification date.
