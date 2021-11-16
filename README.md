@@ -18,7 +18,9 @@ zipit = "0.1"
 ## Limitations
 
 - Depends on [`tokio`](https://docs.rs/tokio/1.13.0/tokio/io/)'s [`AsyncRead`](https://docs.rs/tokio/1.13.0/tokio/io/trait.AsyncRead.html) and [`AsyncWrite`](https://docs.rs/tokio/1.13.0/tokio/io/trait.AsyncWrite.html) traits.
-- No compression (stored method only)
+- No compression (stored method only).
+- Only files (no directories).
+- No customizable external file attributes.
 
 ## Examples
 

@@ -8,6 +8,8 @@
 //!
 //! - Depends on [`tokio`](https://docs.rs/tokio/1.13.0/tokio/io/)'s [`AsyncRead`](https://docs.rs/tokio/1.13.0/tokio/io/trait.AsyncRead.html) and [`AsyncWrite`](https://docs.rs/tokio/1.13.0/tokio/io/trait.AsyncWrite.html) traits.
 //! - No compression (stored method only).
+//! - Only files (no directories).
+//! - No customizable external file attributes.
 //!
 //! ## Examples
 //!
@@ -105,10 +107,8 @@ struct FileInfo {
 
 /// The (timezone-less) date and time that will be written in the archive alongside the file.
 ///
-/// Use `FileDateTime::Zero` if the date and time are insignificant. This will set the value to 0 which is 1980, January 1th, 12AM.
-///
-/// Use `FileDateTime::Custom` if you need to set a custom date and time.
-///
+/// Use `FileDateTime::Zero` if the date and time are insignificant. This will set the value to 0 which is 1980, January 1th, 12AM.  
+/// Use `FileDateTime::Custom` if you need to set a custom date and time.  
 /// Use `FileDateTime::now()` if you want to use the current date and time (`chrono-datetime` feature required).
 pub enum FileDateTime {
     /// 1980, January 1th, 12AM.
@@ -173,7 +173,10 @@ const END_OF_CENTRAL_DIRECTORY_SIZE: usize = 5 * size_of::<u16>() + 3 * size_of:
 
 /// A Zip archive 'stream proxy'.
 ///
-/// Create an archive using the `new` function and a `AsyncWrite`. Then, append file one by one using the `append` function. When finished, use the `finalize` function.
+/// Create an archive using the `new` function and a `AsyncWrite`. Then, append files one by one using the `append` function. When finished, use the `finalize` function.
+/// 
+/// ## Example
+/// 
 /// ```no_run
 /// use std::io::Cursor;
 /// use zipit::{Archive, FileDateTime};
@@ -211,8 +214,11 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
         }
     }
 
-    /// Append a new file to the archive using the provided name, date/time and AsyncRead object.
-    ///
+    /// Append a new file to the archive using the provided name, date/time and AsyncRead object.  
+    /// File's payload is not compressed and is given `rw-r--r--` permissions.
+    /// 
+    /// # Error
+    /// 
     /// This function will forward any error found while trying to read from the file stream or while writing to the underlying sink.
     pub async fn append<R: AsyncRead + Unpin>(
         &mut self,
@@ -278,6 +284,10 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
     }
 
     /// Finalize the archive by writing the necessary metadata to the end of the archive.
+    /// 
+    /// # Error
+    /// 
+    /// This function will forward any error found while trying to read from the file stream or while writing to the underlying sink.
     pub async fn finalize(mut self) -> Result<W, IoError> {
         let mut central_directory_size = 0;
         for file_info in &self.files_info {
@@ -325,6 +335,8 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
 
 /// Calculate the size that an archive could be based on the names and sizes of files.
 ///
+/// ## Example
+/// 
 /// ```no_run
 /// assert_eq!(
 ///     crate::archive_size([
