@@ -6,7 +6,7 @@
 🗄️ Create and stream a Zip archive into an AsyncWrite 🗄️
 
 ```
-zipit = "0.1"
+zipit = "0.2"
 ```
 
 ## Features
