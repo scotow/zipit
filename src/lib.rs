@@ -174,9 +174,9 @@ const END_OF_CENTRAL_DIRECTORY_SIZE: usize = 5 * size_of::<u16>() + 3 * size_of:
 /// A streamed zip archive.
 ///
 /// Create an archive using the `new` function and a `AsyncWrite`. Then, append files one by one using the `append` function. When finished, use the `finalize` function.
-/// 
+///
 /// ## Example
-/// 
+///
 /// ```no_run
 /// use std::io::Cursor;
 /// use zipit::{Archive, FileDateTime};
@@ -217,9 +217,9 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
     /// Append a new file to the archive using the provided name, date/time and `AsyncRead` object.  
     /// Filename must be valid UTF-8. Some (very) old zip utilities might mess up filenames during extraction if they contain non-ascii characters.  
     /// File's payload is not compressed and is given `rw-r--r--` permissions.
-    /// 
+    ///
     /// # Error
-    /// 
+    ///
     /// This function will forward any error found while trying to read from the file stream or while writing to the underlying sink.
     pub async fn append<R: AsyncRead + Unpin>(
         &mut self,
@@ -233,7 +233,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
             FILE_HEADER_BASE_SIZE + name.len();
             0x04034b50u32,          // Local file header signature.
             10u16,                  // Version needed to extract.
-            1u16 << 3 | 1 << 11,    // General purpose flag.
+            1u16 << 3 | 1 << 11,    // General purpose flag (temporary crc and sizes + UTF-8 filename).
             0u16,                   // Compression method (store).
             time,                   // Modification time.
             date,                   // Modification date.
@@ -297,7 +297,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
                 0x02014b50u32,                  // Central directory entry signature.
                 0x031eu16,                      // Version made by.
                 10u16,                          // Version needed to extract.
-                01u16 << 3 | 1 << 11,           // General purpose flag.
+                1u16 << 3 | 1 << 11,            // General purpose flag (temporary crc and sizes + UTF-8 filename).
                 0u16,                           // Compression method (store).
                 file_info.datetime.1,           // Modification time.
                 file_info.datetime.0,           // Modification date.
@@ -337,7 +337,7 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
 /// Calculate the size that an archive could be based on the names and sizes of files.
 ///
 /// ## Example
-/// 
+///
 /// ```no_run
 /// assert_eq!(
 ///     crate::archive_size([
