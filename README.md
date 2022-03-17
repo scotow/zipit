@@ -6,7 +6,7 @@
 🗄️ Create and stream a zip archive into an AsyncWrite 🗄️
 
 ```
-zipit = "0.2"
+zipit = "0.3"
 ```
 
 ## Features
@@ -14,10 +14,10 @@ zipit = "0.2"
 - Stream on the fly an archive from multiple AsyncRead objects.
 - Single read / seek free implementation (the CRC and file size are calculated while streaming and are sent afterwards).
 - Archive size pre-calculation (useful if you want to set the `Content-Length` before streaming).
-  
+- [futures](https://docs.rs/futures/latest/futures/) and [tokio](https://docs.rs/tokio/latest/tokio/io/index.html) `AsyncRead` / `AsyncWrite` compatible. Enable either the `futures-async-io` or the `tokio-async-io` feature accordingly. 
+
 ## Limitations
 
-- Depends on [`tokio`](https://docs.rs/tokio/1.13.0/tokio/io/)'s [`AsyncRead`](https://docs.rs/tokio/1.13.0/tokio/io/trait.AsyncRead.html) and [`AsyncWrite`](https://docs.rs/tokio/1.13.0/tokio/io/trait.AsyncWrite.html) traits.
 - No compression (stored method only).
 - Only files (no directories).
 - No customizable external file attributes.

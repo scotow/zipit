@@ -3,10 +3,10 @@
 //! - Stream on the fly an archive from multiple AsyncRead objects.
 //! - Single read / seek free implementation (the CRC and file size are calculated while streaming and are sent afterwards).
 //! - Archive size pre-calculation (useful if you want to set the `Content-Length` before streaming).
+//! - [futures](https://docs.rs/futures/latest/futures/) and [tokio](https://docs.rs/tokio/latest/tokio/io/index.html) `AsyncRead` / `AsyncWrite` compatible. Enable either the `futures-async-io` or the `tokio-async-io` feature accordingly.
 //!
 //! ## Limitations
 //!
-//! - Depends on [`tokio`](https://docs.rs/tokio/1.13.0/tokio/io/)'s [`AsyncRead`](https://docs.rs/tokio/1.13.0/tokio/io/trait.AsyncRead.html) and [`AsyncWrite`](https://docs.rs/tokio/1.13.0/tokio/io/trait.AsyncWrite.html) traits.
 //! - No compression (stored method only).
 //! - Only files (no directories).
 //! - No customizable external file attributes.
@@ -95,8 +95,12 @@ use std::mem::size_of;
 #[cfg(feature = "chrono-datetime")]
 use chrono::{DateTime, Datelike, Local, TimeZone, Timelike};
 use crc32fast::Hasher;
+#[cfg(feature = "futures-async-io")]
+use futures_util::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+#[cfg(feature = "tokio-async-io")]
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+#[derive(Debug)]
 struct FileInfo {
     name: String,
     size: usize,
@@ -110,18 +114,26 @@ struct FileInfo {
 /// Use `FileDateTime::Zero` if the date and time are insignificant. This will set the value to 0 which is 1980, January 1th, 12AM.  
 /// Use `FileDateTime::Custom` if you need to set a custom date and time.  
 /// Use `FileDateTime::now()` if you want to use the current date and time (`chrono-datetime` feature required).
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum FileDateTime {
     /// 1980, January 1th, 12AM.
     Zero,
     /// (year, month, day, hour, minute, second)
-    Custom(u16, u16, u16, u16, u16, u16),
+    Custom {
+        year: u16,
+        month: u16,
+        day: u16,
+        hour: u16,
+        minute: u16,
+        second: u16,
+    },
 }
 
 impl FileDateTime {
     fn tuple(&self) -> (u16, u16, u16, u16, u16, u16) {
         match self {
             FileDateTime::Zero => Default::default(),
-            &FileDateTime::Custom(ye, mo, da, ho, mi, se) => (ye, mo, da, ho, mi, se),
+            &FileDateTime::Custom{year, month, day, hour, minute, second} => (year, month, day, hour, minute, second),
         }
     }
 
@@ -143,14 +155,14 @@ impl FileDateTime {
 
     /// Use a custom date and time.
     pub fn from_chrono_datetime<Tz: TimeZone>(datetime: DateTime<Tz>) -> Self {
-        Self::Custom(
-            datetime.year() as u16,
-            datetime.month() as u16,
-            datetime.day() as u16,
-            datetime.hour() as u16,
-            datetime.minute() as u16,
-            datetime.second() as u16,
-        )
+        Self::Custom {
+            year: datetime.year() as u16,
+            month: datetime.month() as u16,
+            day: datetime.day() as u16,
+            hour: datetime.hour() as u16,
+            minute: datetime.minute() as u16,
+            second: datetime.second() as u16,
+        }
     }
 }
 
@@ -198,13 +210,14 @@ const END_OF_CENTRAL_DIRECTORY_SIZE: usize = 5 * size_of::<u16>() + 3 * size_of:
 ///     println!("{}", data);
 /// }
 /// ```
+#[derive(Debug)]
 pub struct Archive<W> {
     sink: W,
     files_info: Vec<FileInfo>,
     written: usize,
 }
 
-impl<W: AsyncWrite + Unpin> Archive<W> {
+impl<W> Archive<W> {
     /// Create a new zip archive, using the underlying `AsyncWrite` to write files' header and payload.
     pub fn new(sink: W) -> Self {
         Self {
@@ -213,7 +226,10 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
             written: 0,
         }
     }
+}
 
+#[cfg(any(feature = "futures-async-io", feature = "tokio-async-io"))]
+impl<W> Archive<W> {
     /// Append a new file to the archive using the provided name, date/time and `AsyncRead` object.  
     /// Filename must be valid UTF-8. Some (very) old zip utilities might mess up filenames during extraction if they contain non-ascii characters.  
     /// File's payload is not compressed and is given `rw-r--r--` permissions.
@@ -221,12 +237,16 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
     /// # Error
     ///
     /// This function will forward any error found while trying to read from the file stream or while writing to the underlying sink.
-    pub async fn append<R: AsyncRead + Unpin>(
+    /// 
+    /// # Features
+    /// 
+    /// Requires `tokio-async-io` feature. `futures-async-io` is also available.
+    pub async fn append<R>(
         &mut self,
         name: String,
         datetime: FileDateTime,
         reader: &mut R,
-    ) -> Result<(), IoError> {
+    ) -> Result<(), IoError> where W: AsyncWrite + Unpin, R: AsyncRead + Unpin {
         let (date, time) = datetime.ms_dos();
         let offset = self.written;
         let mut header = header![
@@ -289,7 +309,11 @@ impl<W: AsyncWrite + Unpin> Archive<W> {
     /// # Error
     /// 
     /// This function will forward any error found while trying to read from the file stream or while writing to the underlying sink.
-    pub async fn finalize(mut self) -> Result<W, IoError> {
+    /// 
+    /// # Features
+    /// 
+    /// Requires `tokio-async-io` feature. `futures-async-io` is also available.
+    pub async fn finalize(mut self) -> Result<W, IoError> where W: AsyncWrite + Unpin {
         let mut central_directory_size = 0;
         for file_info in &self.files_info {
             let mut entry = header![

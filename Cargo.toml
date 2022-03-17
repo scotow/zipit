@@ -1,6 +1,6 @@
 [package]
 name = "zipit"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 authors = ["Scotow <contact@scotow.com>"]
 license = "MIT"
@@ -13,26 +13,36 @@ categories = ["compression", "asynchronous", "web-programming"]
 keywords = ["io", "async", "non-blocking", "zip", "archive"]
 
 [dependencies]
-tokio = { version = "1.13", default-features = false, features = ["io-util"] }
+futures-util = { version = "0.3", features = ["io"], optional = true }
+tokio = { version = "1.17", default-features = false, features = ["io-util"], optional = true }
 crc32fast = "1.2"
 chrono = { version = "0.4", optional = true }
 
 [dev-dependencies]
-tokio = { version = "1.13", features = ["macros", "rt-multi-thread", "fs"] }
-tokio-util = { version = "0.6", default-features = false, features = ["io"] }
+futures-util = { version = "0.3", features = ["io"] }
+tokio = { version = "1.17", features = ["macros", "rt-multi-thread", "fs"] }
+tokio-util = { version = "0.7", default-features = false, features = ["io"] }
 hyper = { version = "0.14", default-features = false, features = ["tcp", "http1", "server", "stream"] }
 
 [features]
+futures-async-io = ["futures-util"]
+tokio-async-io = ["tokio"]
 chrono-datetime = ["chrono"]
+
+[[example]]
+name = "futures"
+path = "examples/futures.rs"
+required-features = ["futures-async-io", "chrono-datetime"]
 
 [[example]]
 name = "fs"
 path = "examples/fs.rs"
+required-features = ["tokio-async-io", "chrono-datetime"]
 
 [[example]]
 name = "hyper"
 path = "examples/hyper.rs"
-required-features = ["chrono-datetime"]
+required-features = ["tokio-async-io", "chrono-datetime"]
 
 [package.metadata.docs.rs]
-all-features = true
+features = ["tokio-async-io", "chrono-datetime"]

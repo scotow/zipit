@@ -36,12 +36,12 @@ async fn zip_archive(_req: Request<Body>) -> Result<Response<Body>, hyper::http:
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let addr = ([127, 0, 0, 1], 8080).into();
+    let address = ([127, 0, 0, 1], 8080).into();
     let service =
         make_service_fn(|_| async { Ok::<_, hyper::http::Error>(service_fn(zip_archive)) });
-    let server = Server::bind(&addr).serve(service);
+    let server = Server::bind(&address).serve(service);
 
-    println!("Listening on http://{}", addr);
+    println!("Listening on http://{}", address);
     server.await?;
 
     Ok(())
