@@ -92,6 +92,9 @@
 use std::io::Error as IoError;
 use std::mem::size_of;
 
+#[cfg(all(feature = "futures-async-io", feature = "tokio-async-io"))]
+compile_error!("features futures-async-io and tokio-async-io are mutually exclusive");
+
 #[cfg(feature = "chrono-datetime")]
 use chrono::{DateTime, Datelike, Local, TimeZone, Timelike};
 use crc32fast::Hasher;
