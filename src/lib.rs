@@ -89,19 +89,15 @@
 //! }
 //! ```
 
+#![deny(dead_code, unsafe_code, missing_docs)]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+
 use std::io::Error as IoError;
 use std::mem::size_of;
-
-#[cfg(all(feature = "futures-async-io", feature = "tokio-async-io"))]
-compile_error!("features futures-async-io and tokio-async-io are mutually exclusive");
 
 #[cfg(feature = "chrono-datetime")]
 use chrono::{DateTime, Datelike, Local, TimeZone, Timelike};
 use crc32fast::Hasher;
-#[cfg(feature = "futures-async-io")]
-use futures_util::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-#[cfg(feature = "tokio-async-io")]
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 #[derive(Debug)]
 struct FileInfo {
@@ -123,11 +119,17 @@ pub enum FileDateTime {
     Zero,
     /// (year, month, day, hour, minute, second)
     Custom {
+        /// Year.
         year: u16,
+        /// Month.
         month: u16,
+        /// Day.
         day: u16,
+        /// Hour (24 format).
         hour: u16,
+        /// Minute.
         minute: u16,
+        /// Second.
         second: u16,
     },
 }
@@ -220,6 +222,174 @@ pub struct Archive<W> {
     written: usize,
 }
 
+macro_rules! impl_methods {
+    (
+        $(#[$($attrss:tt)*])*,
+        $w:path, $r:path,
+        $we:path, $re: path,
+        $fa:tt, $ff:tt,
+    ) => {
+        impl<W> Archive<W> {
+            /// Append a new file to the archive using the provided name, date/time and `AsyncRead` object.
+            /// Filename must be valid UTF-8. Some (very) old zip utilities might mess up filenames during extraction if they contain non-ascii characters.
+            /// File's payload is not compressed and is given `rw-r--r--` permissions.
+            ///
+            /// # Error
+            ///
+            /// This function will forward any error found while trying to read from the file stream or while writing to the underlying sink.
+            $(#[$($attrss)*])*
+            pub async fn $fa<R>(
+                &mut self,
+                name: String,
+                datetime: FileDateTime,
+                reader: &mut R,
+            ) -> Result<(), IoError> where W: $w + Unpin, R: $r + Unpin {
+                use $we;
+                use $re;
+
+                let (date, time) = datetime.ms_dos();
+                let offset = self.written;
+                let mut header = header![
+                    FILE_HEADER_BASE_SIZE + name.len();
+                    0x04034b50u32,          // Local file header signature.
+                    10u16,                  // Version needed to extract.
+                    1u16 << 3 | 1 << 11,    // General purpose flag (temporary crc and sizes + UTF-8 filename).
+                    0u16,                   // Compression method (store).
+                    time,                   // Modification time.
+                    date,                   // Modification date.
+                    0u32,                   // Temporary CRC32.
+                    0u32,                   // Temporary compressed size.
+                    0u32,                   // Temporary uncompressed size.
+                    name.len() as u16,      // Filename length.
+                    0u16,                   // Extra field length.
+                ];
+                header.extend_from_slice(name.as_bytes()); // Filename.
+                self.sink.write_all(&header).await?;
+                self.written += header.len();
+
+                let mut total_read = 0;
+                let mut hasher = Hasher::new();
+                let mut buf = vec![0; 4096];
+                loop {
+                    let read = reader.read(&mut buf).await?;
+                    if read == 0 {
+                        break;
+                    }
+
+                    total_read += read;
+                    hasher.update(&buf[..read]);
+                    self.sink.write_all(&buf[..read]).await?; // Payload chunk.
+                }
+                let crc = hasher.finalize();
+                self.written += total_read;
+
+                let descriptor = header![
+                    DESCRIPTOR_SIZE;
+                    0x08074b50u32,      // Data descriptor signature.
+                    crc,                // CRC32.
+                    total_read as u32,  // Compressed size.
+                    total_read as u32,  // Uncompressed size.
+                ];
+                self.sink.write_all(&descriptor).await?;
+                self.written += descriptor.len();
+
+                self.files_info.push(FileInfo {
+                    name,
+                    size: total_read,
+                    crc,
+                    offset,
+                    datetime: (date, time),
+                });
+
+                Ok(())
+            }
+
+            /// Finalize the archive by writing the necessary metadata to the end of the archive.
+            ///
+            /// # Error
+            ///
+            /// This function will forward any error found while writing to the underlying sink.
+            $(#[$($attrss)*])*
+            pub async fn $ff(mut self) -> Result<W, IoError> where W: $w + Unpin {
+                use $we;
+
+                let mut central_directory_size = 0;
+                for file_info in &self.files_info {
+                    let mut entry = header![
+                        CENTRAL_DIRECTORY_ENTRY_BASE_SIZE + file_info.name.len();
+                        0x02014b50u32,                  // Central directory entry signature.
+                        0x031eu16,                      // Version made by.
+                        10u16,                          // Version needed to extract.
+                        1u16 << 3 | 1 << 11,            // General purpose flag (temporary crc and sizes + UTF-8 filename).
+                        0u16,                           // Compression method (store).
+                        file_info.datetime.1,           // Modification time.
+                        file_info.datetime.0,           // Modification date.
+                        file_info.crc,                  // CRC32.
+                        file_info.size as u32,          // Compressed size.
+                        file_info.size as u32,          // Uncompressed size.
+                        file_info.name.len() as u16,    // Filename length.
+                        0u16,                           // Extra field length.
+                        0u16,                           // File comment length.
+                        0u16,                           // File's Disk number.
+                        0u16,                           // Internal file attributes.
+                        (0o100000u32 | 0o0000400 | 0o0000200 | 0o0000040 | 0o0000004) << 16, // External file attributes (regular file / rw-r--r--).
+                        file_info.offset as u32,        // Offset from start of file to local file header.
+                    ];
+                    entry.extend_from_slice(file_info.name.as_bytes()); // Filename.
+                    self.sink.write_all(&entry).await?;
+                    central_directory_size += entry.len();
+                }
+
+                let end_of_central_directory = header![
+                    END_OF_CENTRAL_DIRECTORY_SIZE;
+                    0x06054b50u32,                  // End of central directory signature.
+                    0u16,                           // Number of this disk.
+                    0u16,                           // Number of the disk where central directory starts.
+                    self.files_info.len() as u16,   // Number of central directory records on this disk.
+                    self.files_info.len() as u16,   // Total number of central directory records.
+                    central_directory_size as u32,  // Size of central directory.
+                    self.written as u32,            // Offset from start of file to central directory.
+                    0u16,                           // Comment length.
+                ];
+                self.sink.write_all(&end_of_central_directory).await?;
+
+                Ok(self.sink)
+            }
+        }
+    };
+}
+
+#[cfg(all(feature = "futures-async-io", feature = "tokio-async-io"))]
+impl_methods!(
+    #[cfg(all(feature = "futures-async-io", feature = "tokio-async-io"))],
+    futures_util::AsyncWrite, futures_util::AsyncRead,
+    futures_util::AsyncWriteExt, futures_util::AsyncReadExt,
+    futures_append, futures_finalize,
+);
+#[cfg(all(feature = "futures-async-io", feature = "tokio-async-io"))]
+impl_methods!(
+    #[cfg(all(feature = "futures-async-io", feature = "tokio-async-io"))],
+    tokio::io::AsyncWrite, tokio::io::AsyncRead,
+    tokio::io::AsyncWriteExt, tokio::io::AsyncReadExt,
+    tokio_append, tokio_finalize,
+);
+
+#[cfg(all(feature = "futures-async-io", not(feature = "tokio-async-io")))]
+impl_methods!(
+    #[cfg(all(feature = "futures-async-io", not(feature = "tokio-async-io")))],
+    futures_util::AsyncWrite, futures_util::AsyncRead,
+    futures_util::AsyncWriteExt, futures_util::AsyncReadExt,
+    append, finalize,
+);
+
+#[cfg(all(not(feature = "futures-async-io"), feature = "tokio-async-io"))]
+impl_methods!(
+    #[cfg(all(not(feature = "futures-async-io"), feature = "tokio-async-io"))],
+    tokio::io::AsyncWrite, tokio::io::AsyncRead,
+    tokio::io::AsyncWriteExt, tokio::io::AsyncReadExt,
+    append, finalize,
+);
+
 impl<W> Archive<W> {
     /// Create a new zip archive, using the underlying `AsyncWrite` to write files' header and payload.
     pub fn new(sink: W) -> Self {
@@ -228,136 +398,6 @@ impl<W> Archive<W> {
             files_info: Vec::new(),
             written: 0,
         }
-    }
-}
-
-#[cfg(any(feature = "futures-async-io", feature = "tokio-async-io"))]
-impl<W> Archive<W> {
-    /// Append a new file to the archive using the provided name, date/time and `AsyncRead` object.  
-    /// Filename must be valid UTF-8. Some (very) old zip utilities might mess up filenames during extraction if they contain non-ascii characters.  
-    /// File's payload is not compressed and is given `rw-r--r--` permissions.
-    ///
-    /// # Error
-    ///
-    /// This function will forward any error found while trying to read from the file stream or while writing to the underlying sink.
-    /// 
-    /// # Features
-    /// 
-    /// Requires `tokio-async-io` feature. `futures-async-io` is also available.
-    pub async fn append<R>(
-        &mut self,
-        name: String,
-        datetime: FileDateTime,
-        reader: &mut R,
-    ) -> Result<(), IoError> where W: AsyncWrite + Unpin, R: AsyncRead + Unpin {
-        let (date, time) = datetime.ms_dos();
-        let offset = self.written;
-        let mut header = header![
-            FILE_HEADER_BASE_SIZE + name.len();
-            0x04034b50u32,          // Local file header signature.
-            10u16,                  // Version needed to extract.
-            1u16 << 3 | 1 << 11,    // General purpose flag (temporary crc and sizes + UTF-8 filename).
-            0u16,                   // Compression method (store).
-            time,                   // Modification time.
-            date,                   // Modification date.
-            0u32,                   // Temporary CRC32.
-            0u32,                   // Temporary compressed size.
-            0u32,                   // Temporary uncompressed size.
-            name.len() as u16,      // Filename length.
-            0u16,                   // Extra field length.
-        ];
-        header.extend_from_slice(name.as_bytes()); // Filename.
-        self.sink.write_all(&header).await?;
-        self.written += header.len();
-
-        let mut total_read = 0;
-        let mut hasher = Hasher::new();
-        let mut buf = vec![0; 4096];
-        loop {
-            let read = reader.read(&mut buf).await?;
-            if read == 0 {
-                break;
-            }
-
-            total_read += read;
-            hasher.update(&buf[..read]);
-            self.sink.write_all(&buf[..read]).await?; // Payload chunk.
-        }
-        let crc = hasher.finalize();
-        self.written += total_read;
-
-        let descriptor = header![
-            DESCRIPTOR_SIZE;
-            0x08074b50u32,      // Data descriptor signature.
-            crc,                // CRC32.
-            total_read as u32,  // Compressed size.
-            total_read as u32,  // Uncompressed size.
-        ];
-        self.sink.write_all(&descriptor).await?;
-        self.written += descriptor.len();
-
-        self.files_info.push(FileInfo {
-            name,
-            size: total_read,
-            crc,
-            offset,
-            datetime: (date, time),
-        });
-
-        Ok(())
-    }
-
-    /// Finalize the archive by writing the necessary metadata to the end of the archive.
-    /// 
-    /// # Error
-    /// 
-    /// This function will forward any error found while trying to read from the file stream or while writing to the underlying sink.
-    /// 
-    /// # Features
-    /// 
-    /// Requires `tokio-async-io` feature. `futures-async-io` is also available.
-    pub async fn finalize(mut self) -> Result<W, IoError> where W: AsyncWrite + Unpin {
-        let mut central_directory_size = 0;
-        for file_info in &self.files_info {
-            let mut entry = header![
-                CENTRAL_DIRECTORY_ENTRY_BASE_SIZE + file_info.name.len();
-                0x02014b50u32,                  // Central directory entry signature.
-                0x031eu16,                      // Version made by.
-                10u16,                          // Version needed to extract.
-                1u16 << 3 | 1 << 11,            // General purpose flag (temporary crc and sizes + UTF-8 filename).
-                0u16,                           // Compression method (store).
-                file_info.datetime.1,           // Modification time.
-                file_info.datetime.0,           // Modification date.
-                file_info.crc,                  // CRC32.
-                file_info.size as u32,          // Compressed size.
-                file_info.size as u32,          // Uncompressed size.
-                file_info.name.len() as u16,    // Filename length.
-                0u16,                           // Extra field length.
-                0u16,                           // File comment length.
-                0u16,                           // File's Disk number.
-                0u16,                           // Internal file attributes.
-                (0o100000u32 | 0o0000400 | 0o0000200 | 0o0000040 | 0o0000004) << 16, // External file attributes (regular file / rw-r--r--).
-                file_info.offset as u32,        // Offset from start of file to local file header.
-            ];
-            entry.extend_from_slice(file_info.name.as_bytes()); // Filename.
-            self.sink.write_all(&entry).await?;
-            central_directory_size += entry.len();
-        }
-
-        let end_of_central_directory = header![
-            END_OF_CENTRAL_DIRECTORY_SIZE;
-            0x06054b50u32,                  // End of central directory signature.
-            0u16,                           // Number of this disk.
-            0u16,                           // Number of the disk where central directory starts.
-            self.files_info.len() as u16,   // Number of central directory records on this disk.
-            self.files_info.len() as u16,   // Total number of central directory records.
-            central_directory_size as u32,  // Size of central directory.
-            self.written as u32,            // Offset from start of file to central directory.
-            0u16,                           // Comment length.
-        ];
-        self.sink.write_all(&end_of_central_directory).await?;
-
-        Ok(self.sink)
     }
 }
 

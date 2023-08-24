@@ -1,6 +1,6 @@
 [package]
 name = "zipit"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 authors = ["Scotow <contact@scotow.com>"]
 license = "MIT"
@@ -8,15 +8,15 @@ readme = "README.md"
 documentation = "https://docs.rs/zipit"
 repository = "https://github.com/scotow/zipit"
 homepage = "https://github.com/scotow/zipit"
-description = "Create and stream a Zip archive into an AsyncWrite"
+description = "Create and stream zip archives on the fly"
 categories = ["compression", "asynchronous", "web-programming"]
 keywords = ["io", "async", "non-blocking", "zip", "archive"]
 
 [dependencies]
+chrono = { version = "0.4", optional = true }
+crc32fast = "1.2"
 futures-util = { version = "0.3", features = ["io"], optional = true }
 tokio = { version = "1.17", default-features = false, features = ["io-util"], optional = true }
-crc32fast = "1.2"
-chrono = { version = "0.4", optional = true }
 
 [dev-dependencies]
 futures-util = { version = "0.3", features = ["io"] }
@@ -45,4 +45,5 @@ path = "examples/hyper.rs"
 required-features = ["tokio-async-io", "chrono-datetime"]
 
 [package.metadata.docs.rs]
-features = ["tokio-async-io", "chrono-datetime"]
+rustdoc-args = ["--cfg", "docsrs"]
+all-features = true
