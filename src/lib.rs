@@ -92,13 +92,16 @@
 #![deny(dead_code, unsafe_code, missing_docs)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
+#[cfg(any(feature = "futures-async-io", feature = "tokio-async-io"))]
 use std::io::Error as IoError;
 use std::mem::size_of;
 
 #[cfg(feature = "chrono-datetime")]
 use chrono::{DateTime, Datelike, Local, TimeZone, Timelike};
+#[cfg(any(feature = "futures-async-io", feature = "tokio-async-io"))]
 use crc32fast::Hasher;
 
+#[cfg(any(feature = "futures-async-io", feature = "tokio-async-io"))]
 #[derive(Debug)]
 struct FileInfo {
     name: String,
@@ -134,6 +137,7 @@ pub enum FileDateTime {
     },
 }
 
+#[cfg(any(feature = "futures-async-io", feature = "tokio-async-io"))]
 impl FileDateTime {
     fn tuple(&self) -> (u16, u16, u16, u16, u16, u16) {
         match self {
@@ -171,6 +175,7 @@ impl FileDateTime {
     }
 }
 
+#[cfg(any(feature = "futures-async-io", feature = "tokio-async-io"))]
 macro_rules! header {
     [$capacity:expr; $($elem:expr),*$(,)?] => {
         {
@@ -215,6 +220,7 @@ const END_OF_CENTRAL_DIRECTORY_SIZE: usize = 5 * size_of::<u16>() + 3 * size_of:
 ///     println!("{}", data);
 /// }
 /// ```
+#[cfg(any(feature = "futures-async-io", feature = "tokio-async-io"))]
 #[derive(Debug)]
 pub struct Archive<W> {
     sink: W,
@@ -222,6 +228,7 @@ pub struct Archive<W> {
     written: usize,
 }
 
+#[cfg(any(feature = "futures-async-io", feature = "tokio-async-io"))]
 macro_rules! impl_methods {
     (
         $(#[$($attrss:tt)*])*,
@@ -390,6 +397,7 @@ impl_methods!(
     append, finalize,
 );
 
+#[cfg(any(feature = "futures-async-io", feature = "tokio-async-io"))]
 impl<W> Archive<W> {
     /// Create a new zip archive, using the underlying `AsyncWrite` to write files' header and payload.
     pub fn new(sink: W) -> Self {
@@ -457,7 +465,7 @@ mod tests {
     async fn archive_structure() {
         let mut archive = Archive::new(Vec::new());
         archive
-            .append(
+            .tokio_append(
                 "file1.txt".to_owned(),
                 FileDateTime::now(),
                 &mut Cursor::new(b"hello\n".to_vec()),
@@ -465,14 +473,14 @@ mod tests {
             .await
             .unwrap();
         archive
-            .append(
+            .tokio_append(
                 "file2.txt".to_owned(),
                 FileDateTime::now(),
                 &mut Cursor::new(b"world\n".to_vec()),
             )
             .await
             .unwrap();
-        let data = archive.finalize().await.unwrap();
+        let data = archive.tokio_finalize().await.unwrap();
 
         fn match_except_datetime(a1: &[u8], a2: &[u8]) -> bool {
             let datetime_ranges = [
