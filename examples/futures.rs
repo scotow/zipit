@@ -1,5 +1,5 @@
-use zipit::{Archive, FileDateTime};
 use futures_util::io::Cursor;
+use zipit::{Archive, FileDateTime};
 
 #[tokio::main]
 async fn main() {

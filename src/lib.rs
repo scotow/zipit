@@ -142,7 +142,14 @@ impl FileDateTime {
     fn tuple(&self) -> (u16, u16, u16, u16, u16, u16) {
         match self {
             FileDateTime::Zero => Default::default(),
-            &FileDateTime::Custom{year, month, day, hour, minute, second} => (year, month, day, hour, minute, second),
+            &FileDateTime::Custom {
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+            } => (year, month, day, hour, minute, second),
         }
     }
 
