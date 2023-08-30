@@ -1,0 +1,24 @@
+on:
+  push:
+    branches: ["master", "main"]
+  pull_request:
+    branches: ["master", "main"]
+
+name: CI
+
+jobs:
+  tests:
+    name: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: tests
+        run: |
+          cargo test --lib --all-features
+          cargo test --example fs --example hyper --features="tokio-async-io chrono-datetime"
+          cargo test --example futures --features="futures-async-io chrono-datetime"
+          cargo test --doc --features "tokio-async-io chrono-datetime"
+      - name: fmt
+        run: cargo fmt --check
+      - name: clippy
+        run: cargo clippy --all-features -- -Dwarnings

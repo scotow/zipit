@@ -17,14 +17,14 @@
 //!
 //! Write a zip archive to the file system using [`tokio::fs::File`](https://docs.rs/tokio/1.13.0/tokio/fs/struct.File.html):
 //!
-//! ```rust
+//! ```
 //! use std::io::Cursor;
 //! use tokio::fs::File;
 //! use zipit::{Archive, FileDateTime};
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let file = File::create("archive.zip").await.unwrap();
+//!     let file = File::from_std(tempfile::tempfile().unwrap());
 //!     let mut archive = Archive::new(file);
 //!     archive.append(
 //!         "file1.txt".to_owned(),
@@ -44,7 +44,7 @@
 //!
 //! Stream a zip archive as a [`hyper`](https://docs.rs/hyper/0.14.14/hyper/) response:
 //!
-//! ```rust
+//! ```
 //! use std::io::Cursor;
 //! use hyper::{header, Body, Request, Response, Server, StatusCode};
 //! use tokio::io::duplex;
@@ -217,7 +217,7 @@ const END_OF_CENTRAL_DIRECTORY_SIZE: usize = 5 * size_of::<u16>() + 3 * size_of:
 ///         &mut Cursor::new(b"world\n".to_vec()),
 ///     ).await.unwrap();
 ///     let data = archive.finalize().await.unwrap();
-///     println!("{}", data);
+///     println!("{:?}", data);
 /// }
 /// ```
 #[cfg(any(feature = "futures-async-io", feature = "tokio-async-io"))]
@@ -413,9 +413,9 @@ impl<W> Archive<W> {
 ///
 /// ## Example
 ///
-/// ```no_run
+/// ```
 /// assert_eq!(
-///     crate::archive_size([
+///     zipit::archive_size([
 ///         ("file1.txt", b"hello\n".len()),
 ///         ("file2.txt", b"world\n".len()),
 ///     ]),
