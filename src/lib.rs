@@ -157,7 +157,7 @@ impl FileDateTime {
         let (year, month, day, hour, min, sec) = self.tuple();
         (
             day | month << 5 | year.saturating_sub(1980) << 9,
-            sec / 2 | min << 5 | hour << 11,
+            (sec / 2) | min << 5 | hour << 11,
         )
     }
 }
